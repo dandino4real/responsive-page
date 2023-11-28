@@ -1,9 +1,19 @@
+// AppContent.js
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { useEntries, EntriesProvider } from "./context/EntriesContext";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import FormComponent from "./components/FormComponent";
+import EntryListComponent from "./components/EntryListComponent";
 
-const App = () => {
+const AppContent = () => {
+  const {
+    getAllSectors,
+    getAllUploads,
+    createEntries,
+    deleteEntry,
+    updateEntry,
+  } = useEntries();
   const [formData, setFormData] = useState({
     name: "",
     selectedCategory: "",
@@ -11,19 +21,29 @@ const App = () => {
     agreeToTerms: false,
   });
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+
   const [sectorOptions, setSectorOptions] = useState({});
-  const categoryOptions = Object.keys(sectorOptions);
+  const [details, setDetails] = useState([]);
 
   useEffect(() => {
-    axios
-      .get("http://localhost:3001/api/sectors")
-      .then((response) => {
-        setSectorOptions(response.data.data);
-      })
-      .catch((error) => {
-        console.error("Error fetching sector options:", error);
-      });
-  }, []);
+    const fetchData = async () => {
+      const sectorsData = await getAllSectors();
+      setSectorOptions(sectorsData);
+    };
+
+    fetchData();
+  }, [getAllSectors]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const uploadsData = await getAllUploads();
+      setDetails(uploadsData);
+    };
+
+    fetchData();
+  }, [getAllUploads]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -41,7 +61,7 @@ const App = () => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     // Custom validation for checkbox
@@ -50,15 +70,31 @@ const App = () => {
       return;
     }
 
-    axios
-      .post("http://localhost:3001/api/uploads", formData)
-      .then((response) => {
+    try {
+      if (isEditing) {
+        await updateEntry(editingId, formData);
+
+        setDetails((prevDetails) =>
+          prevDetails.map((entry) =>
+            entry._id === editingId ? { ...entry, ...formData } : entry
+          )
+        );
+        setIsEditing(false);
+        setEditingId(null);
+        toast.success("Data has been updated!");
+      } else {
+        await createEntries(formData);
+        setDetails((prevDetails) => {
+          return [formData, ...prevDetails];
+        });
         toast.success("Data has been sent!");
         resetForm();
-      })
-      .catch((error) => {
-        console.error("Error saving form data:", error);
-      });
+      }
+    } catch (error) {
+      console.error("Error handling submit:", error);
+
+      toast.error("Error submitting data");
+    }
   };
 
   const resetForm = () => {
@@ -70,85 +106,82 @@ const App = () => {
     });
   };
 
+  const handleDelete = async (id) => {
+    try {
+      await deleteEntry(id);
+
+      setDetails((prevDetails) =>
+        prevDetails.filter((entry) => entry._id !== id)
+      );
+
+      toast.success("Entry deleted successfully");
+    } catch (error) {
+      console.error("Error handling delete entry:", error);
+
+      toast.error("Error deleting entry");
+    }
+  };
+
+  const handleEdit = (id) => {
+    const entryToEdit = details.find((entry) => entry._id === id);
+    setFormData({
+      name: entryToEdit.name,
+      selectedCategory: entryToEdit.selectedCategory,
+      selectedSector: entryToEdit.selectedSector,
+      agreeToTerms: entryToEdit.agreeToTerms,
+    });
+    setIsEditing(true);
+    setEditingId(id);
+  };
+
+  const handleUpdate = async () => {
+    try {
+      await updateEntry(editingId, formData);
+
+      setDetails((prevDetails) =>
+        prevDetails.map((entry) =>
+          entry._id === editingId ? { ...entry, ...formData } : entry
+        )
+      );
+      setIsEditing(false);
+      setEditingId(null);
+      toast.success("Data has been updated!");
+    } catch (error) {
+      console.error("Error handling update entry:", error);
+    }
+  };
+
   return (
     <>
-      <div className="container mx-auto p-8 h-screen bg-green-50">
+      <div className="container-fluid mx-auto p-8 min-h-screen bg-green-50">
         <h1 className="text-3xl font-bold mb-5 text-center">
-          Please enter your name and pick the Sectors you are currently involved in.
+          Please enter your name and pick the Sectors you are currently involved
+          in.
         </h1>
-        <form
-          onSubmit={handleSubmit}
-          className="max-w-md shadow-2xl rounded-2xl m-auto  p-5 bg-zinc-50"
-        >
-          <label className="flex flex-col mb-4">
-            <span className="text-gray-700">Name:</span>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              className="mt-1 p-2 border rounded"
-            />
-          </label>
-          <div className="flex mb-4">
-            <label className="flex-1 mr-2">
-              <span className="text-gray-700">Sector:</span>
-              <select
-                name="selectedCategory"
-                value={formData.selectedCategory}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-                required
-                className="mt-1 p-2 border rounded w-full"
-              >
-                <option value="">Select a sector</option>
-                {categoryOptions.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {formData.selectedCategory && (
-              <label className="flex-1 ml-2">
-                <span className="text-gray-700">Sub-Sector:</span>
-                <select
-                  name="selectedSector"
-                  value={formData.selectedSector}
-                  onChange={handleChange}
-                  required
-                  className="mt-1 p-2 border rounded w-full"
-                >
-                  <option value="">Select a sector</option>
-                  {sectorOptions[formData.selectedCategory].map((sector) => (
-                    <option key={sector} value={sector}>
-                      {sector}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          <label className="block mb-4">
-            <input
-              type="checkbox"
-              name="agreeToTerms"
-              checked={formData.agreeToTerms}
-              onChange={handleChange}
-              className="mr-2"
-            />
-            <span className="text-gray-700">Agree to Terms</span>
-          </label>
-          <button
-            type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded w-full"
-          >
-            Save
-          </button>
-        </form>
+        <FormComponent
+          formData={formData}
+          sectorOptions={sectorOptions}
+          handleChange={handleChange}
+          handleCategoryChange={handleCategoryChange}
+          handleSubmit={isEditing ? handleUpdate : handleSubmit}
+          isEditing={isEditing}
+        />
+        <EntryListComponent
+          details={details}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
+        />
       </div>
       <ToastContainer position="bottom-right" autoClose={3000} />
     </>
+  );
+};
+
+const App = () => {
+  return (
+    <EntriesProvider>
+      <AppContent />
+    </EntriesProvider>
   );
 };
 
